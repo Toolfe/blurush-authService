@@ -14,7 +14,7 @@ app.use(bodyParser.json());
 const routes = require("./server/routes/routes");
 
 const requestAuthorization = (req, res, next) => {
-  const applicationId = req.headers["APP-ID"];
+  const applicationId = req.headers["app-id"];
   if (!applicationId) {
     res.status(403).json({
       error: true,

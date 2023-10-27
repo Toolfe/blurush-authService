@@ -190,7 +190,7 @@ router.post("/login", (req, res) => {
           });
         }
       } else {
-        res.status(400).json({
+        res.status(200).json({
           error: true,
           errorMessage: "System error try again later",
         });
