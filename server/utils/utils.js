@@ -1,7 +1,8 @@
 const dbCon = require("../config/database");
+const jwt = require("jsonwebtoken");
 
 const executeStoredProcedure = (sql, data, callback) => {
-  dbCon.query(sql, data, (err, rows, field) => {
+  dbCon.query(sql, data, (err, rows) => {
     let result = {};
     if (err) {
       result = {
@@ -21,4 +22,15 @@ const executeStoredProcedure = (sql, data, callback) => {
   });
 };
 
-module.exports = { executeStoredProcedure };
+const generateUserJWTToken = (user, expiryTime) => {
+  return jwt.sign(user, process.env.JWT_SECRET_KEY, {
+    algorithm: "HS512",
+    expiresIn: expiryTime,
+  });
+};
+
+const generateOTP = () => {
+  return Number(Math.random() * 9000 + 1000).toFixed(0);
+};
+
+module.exports = { executeStoredProcedure, generateUserJWTToken, generateOTP };

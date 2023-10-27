@@ -13,8 +13,25 @@ app.use(bodyParser.json());
 
 const routes = require("./server/routes/routes");
 
-app.use("/userservice", routes);
+const requestAuthorization = (req, res, next) => {
+  const applicationId = req.headers["APP-ID"];
+  if (!applicationId) {
+    res.status(403).json({
+      error: true,
+      errorMessage: "Not authourized",
+    });
+  } else if (applicationId !== process.env.APPID) {
+    res.status(403).json({
+      error: true,
+      errorMessage: "Invalid app-id",
+    });
+  } else {
+    next();
+  }
+};
+
+app.use("/userservice", requestAuthorization, routes);
 
 app.listen(process.env.AUTH_PORT, () => {
-  console.log("USERSERVICE API Started on " + process.env.port);
+  console.log("USERSERVICE API Started on " + process.env.AUTH_PORT);
 });
