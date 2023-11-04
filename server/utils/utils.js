@@ -13,7 +13,7 @@ const executeStoredProcedure = (sql, data, callback) => {
     } else if (rows) {
       result = {
         err: false,
-        data: rows?.[0]?.[0],
+        data: rows?.[0],
       };
     } else {
       console.log("Err");

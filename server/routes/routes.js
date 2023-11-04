@@ -1,7 +1,6 @@
 const express = require("express");
 const router = express.Router();
 const bcrypt = require("bcryptjs");
-const uuid = require("uuid-by-string");
 const jwt = require("jsonwebtoken");
 const axios = require("axios");
 const {
@@ -23,14 +22,11 @@ const messageAccessToken =
 
 router.post("/createUser", (req, res) => {
   const { name, emailAddress, password, deviceId, userType } = req.body;
-  const insertProcedure = "CALL INSERTUSER(?,?,?,?,?,?,?,?,?)";
+  const insertProcedure = "CALL INSERTUSER(?,?,?,?,?)";
   const encryptedPassword = bcrypt.hashSync(password, 10);
-  const userId = uuid(emailAddress);
   executeStoredProcedure(
     insertProcedure,
     [
-      userId,
-      new Date(),
       name,
       emailAddress,
       encryptedPassword,
@@ -41,7 +37,7 @@ router.post("/createUser", (req, res) => {
       if (result?.err) {
         res.status(400).json({
           error: true,
-          errorMessage: result.errorMessage,
+          errorMessage: result,
         });
       } else {
         var response = {};
@@ -50,7 +46,7 @@ router.post("/createUser", (req, res) => {
         const generatedOTP = generateOTP();
         const options = {
           method: "POST",
-          url: `https://localhost:${process.env.MESSAGE_PORT}/messageservice/sendOTPMail`,
+          url: `http://localhost:${process.env.MESSAGE_PORT}/messageservice/sendOTPMail`,
           headers: {
             Authourization: messageAccessToken,
           },
@@ -62,21 +58,28 @@ router.post("/createUser", (req, res) => {
         axios
           .request(options)
           .then(function (response) {
-            executeStoredProcedure(
-              "CALL STORE_OTP(?,?)",
-              [emailAddress, generatedOTP],
-              (result) => {
-                if (!result.err) {
-                  res.status(200).json({
-                    message: "OTP Message sent successfully",
-                    data: response.data,
-                  });
+            if (!response.data.error) {
+              executeStoredProcedure(
+                "CALL STORE_OTP(?,?)",
+                [emailAddress, generatedOTP],
+                (result) => {
+                  if (!result.err) {
+                    res.status(200).json({
+                      message: "OTP Message sent successfully",
+                      data: response.data,
+                    });
+                  }
                 }
-              }
-            );
+              );
+            } else {
+              res.status(200).json({
+                message: "Cannot Send Message Try again later",
+                data: response.data,
+              });
+            }
           })
           .catch(function (error) {
-            res.status(400).json(error?.response.data);
+            res.status(400).json(error);
           });
       }
     }
@@ -91,6 +94,46 @@ router.post("/verifyUserOTP", (req, res) => {
       errorMessage: "Email address and OTP is needed to verify the user",
     });
   } else {
+    executeStoredProcedure("CALL GET_OTP(?)", [emailAddress], (result) => {
+      if (!result.err) {
+        if (result.data.length > 0) {
+          if (result.data[0]?.OTP == otp) {
+            executeStoredProcedure(
+              "CALL UPDATEUSERSTATUS(?,?)",
+              [emailAddress, 1],
+              (result) => {
+                if (!result.err && result.data.length > 0) {
+                  res.status(200).json({
+                    error: false,
+                    accessToken: jwt.sign(
+                      result.data[0],
+                      process.env.JWT_SECRET_KEY,
+                      { algorithm: "HS512", expiresIn: 24 * 60 * 60 * 1000 }
+                    ),
+                    data: result.data[0],
+                  });
+                } else {
+                  res.status(400).json({
+                    error: true,
+                    errorMessage: "No data found for given emailaddress",
+                  });
+                }
+              }
+            );
+          }
+        } else {
+          res.status(400).json({
+            error: true,
+            errorMessage: result,
+          });
+        }
+      } else {
+        res.status(400).json({
+          error: true,
+          errorMessage: result,
+        });
+      }
+    });
   }
 });
 
@@ -104,14 +147,15 @@ router.post("/login", (req, res) => {
   } else {
     executeStoredProcedure("Call GETUSER(?)", [userId], (result) => {
       if (!result.err) {
+        console.log(result?.data[0]);
         if (result?.data?.length > 0) {
-          if (String(result.data.password).localeCompare(password) == 0) {
+          if (bcrypt.compareSync(password, result.data[0].password)) {
             res.status(200).json({
               error: false,
               data: {
-                userName: "userId",
+                userName: userId,
                 accessToken: generateUserJWTToken(
-                  result?.data,
+                  { ...result?.data[0] },
                   3 * 60 * 60 * 1000
                 ),
               },

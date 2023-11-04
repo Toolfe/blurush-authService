@@ -3,7 +3,7 @@ const http = require("http");
 const cors = require("cors");
 const path = require("path");
 const bodyParser = require("body-parser");
-require("dotenv").config({ path: path.join(__dirname, "../.env") });
+require("dotenv").config({ path: path.join(__dirname, "./.env") });
 
 const app = express();
 
