@@ -12,6 +12,7 @@ app.use(cors());
 app.use(bodyParser.json());
 
 const routes = require("./server/routes/routes");
+const { logger } = require("./server/utils/winston");
 
 const requestAuthorization = (req, res, next) => {
   const applicationId = req.headers["app-id"];
@@ -33,5 +34,5 @@ const requestAuthorization = (req, res, next) => {
 app.use("/userservice", requestAuthorization, routes);
 
 app.listen(process.env.AUTH_PORT, () => {
-  console.log("USERSERVICE API Started on " + process.env.AUTH_PORT);
+  logger.info("USERSERVICE API Started on " + process.env.AUTH_PORT);
 });

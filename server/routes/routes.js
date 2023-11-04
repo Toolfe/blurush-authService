@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const cryptoJS = require("crypto-js");
+const bcrypt = require("bcryptjs");
 const uuid = require("uuid-by-string");
 const jwt = require("jsonwebtoken");
 const axios = require("axios");
@@ -22,64 +22,9 @@ const messageAccessToken =
   );
 
 router.post("/createUser", (req, res) => {
-  const { name, emailAddress, password, isUserVerified, deviceId, userType } =
-    req.body;
-  Object.keys(req.body).forEach((key) => {
-    if (key !== "deviceId") {
-      if (
-        req.body[key] == "" ||
-        req.body[key] == null ||
-        req.body[key] == undefined
-      ) {
-        res.status(400).json({
-          error: true,
-          errorField: key,
-          errorMessage: `${key.toUpperCase()} is a Required value`,
-        });
-      } else if (key == "name") {
-        var errorMessage =
-          name?.length < 3
-            ? `${key.toUpperCase()} should have atleast 3 letters`
-            : !name?.match(/^[A-Za-z]+$/)
-            ? `${key.toUpperCase()} can only have alphabets`
-            : "";
-        if (errorMessage) {
-          res.status(400).json({
-            error: true,
-            errorField: key,
-            errorMessage: errorMessage,
-          });
-        }
-      } else if (key === "password") {
-        if (
-          !password?.match(/^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[\W_]).{8,}$/)
-        ) {
-          res.status(400).json({
-            error: true,
-            errorField: key,
-            errorMessage: "Password policy violation",
-          });
-        }
-      } else if (key == "emailAddress") {
-        if (
-          !emailAddress.match(
-            /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/
-          )
-        ) {
-          res.status(400).json({
-            error: true,
-            errorField: key,
-            errorMessage: "Invalid email address",
-          });
-        }
-      }
-    }
-  });
+  const { name, emailAddress, password, deviceId, userType } = req.body;
   const insertProcedure = "CALL INSERTUSER(?,?,?,?,?,?,?,?,?)";
-  const encryptedPassword = cryptoJS.AES.encrypt(
-    password,
-    process.env.PASSWORD_ENCRPTION_KEY_DATABASE
-  );
+  const encryptedPassword = bcrypt.hashSync(password, 10);
   const userId = uuid(emailAddress);
   executeStoredProcedure(
     insertProcedure,
@@ -89,9 +34,7 @@ router.post("/createUser", (req, res) => {
       name,
       emailAddress,
       encryptedPassword,
-      isUserVerified ? 1 : 0,
       userType == "Mobile" ? 1 : 0,
-      userType,
       deviceId,
     ],
     (result) => {
@@ -103,42 +46,38 @@ router.post("/createUser", (req, res) => {
       } else {
         var response = {};
         response.error = false;
-        if (isUserVerified) {
-          response.message = "User Created Successfully";
-          response.authenticationToken = generateUserJWTToken(
-            {
-              name: name,
-              userId: userId,
-              emailAddress: emailAddress,
-              userType: userType,
-            },
-            userType == "WEB" ? 2 * 60 * 60 * 1000 : 30 * 24 * 60 * 60 * 1000
-          );
-        } else {
-          response.data = result?.data;
-          const generatedOTP = generateOTP();
-          const options = {
-            method: "POST",
-            url: `https://localhost:${process.env.MESSAGE_PORT}/messageservice/sendOTPMail`,
-            headers: {
-              Authourization: messageAccessToken,
-            },
-            data: {
-              recipient: emailAddress,
-              otp: generatedOTP,
-            },
-          };
-          axios
-            .request(options)
-            .then(function (response) {
-              res.json(response?.data);
-            })
-            .catch(function (error) {
-              res.json(error?.response.data);
-            });
-          response.message = "User verification otp sent successfully";
-          res.status(200).json(data);
-        }
+        response.data = result?.data;
+        const generatedOTP = generateOTP();
+        const options = {
+          method: "POST",
+          url: `https://localhost:${process.env.MESSAGE_PORT}/messageservice/sendOTPMail`,
+          headers: {
+            Authourization: messageAccessToken,
+          },
+          data: {
+            recipient: emailAddress,
+            otp: generatedOTP,
+          },
+        };
+        axios
+          .request(options)
+          .then(function (response) {
+            executeStoredProcedure(
+              "CALL STORE_OTP(?,?)",
+              [emailAddress, generatedOTP],
+              (result) => {
+                if (!result.err) {
+                  res.status(200).json({
+                    message: "OTP Message sent successfully",
+                    data: response.data,
+                  });
+                }
+              }
+            );
+          })
+          .catch(function (error) {
+            res.status(400).json(error?.response.data);
+          });
       }
     }
   );
