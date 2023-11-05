@@ -102,15 +102,14 @@ router.post("/verifyUserOTP", (req, res) => {
               "CALL UPDATEUSERSTATUS(?,?)",
               [emailAddress, 1],
               (result) => {
-                if (!result.err && result.data.length > 0) {
+                if (!result.err) {
                   res.status(200).json({
                     error: false,
                     accessToken: jwt.sign(
-                      result.data[0],
+                      { userId: emailAddress },
                       process.env.JWT_SECRET_KEY,
                       { algorithm: "HS512", expiresIn: 24 * 60 * 60 * 1000 }
                     ),
-                    data: result.data[0],
                   });
                 } else {
                   res.status(400).json({
@@ -120,6 +119,11 @@ router.post("/verifyUserOTP", (req, res) => {
                 }
               }
             );
+          } else {
+            res.status(400).json({
+              error: true,
+              errorMessage: "Invalid OTP",
+            });
           }
         } else {
           res.status(400).json({
@@ -139,6 +143,7 @@ router.post("/verifyUserOTP", (req, res) => {
 
 router.post("/login", (req, res) => {
   const { userId, password } = req.body;
+  
   if (!userId || !password) {
     res.status(400).json({
       error: true,
@@ -147,19 +152,25 @@ router.post("/login", (req, res) => {
   } else {
     executeStoredProcedure("Call GETUSER(?)", [userId], (result) => {
       if (!result.err) {
-        console.log(result?.data[0]);
         if (result?.data?.length > 0) {
           if (bcrypt.compareSync(password, result.data[0].password)) {
-            res.status(200).json({
-              error: false,
-              data: {
-                userName: userId,
-                accessToken: generateUserJWTToken(
-                  { ...result?.data[0] },
-                  3 * 60 * 60 * 1000
-                ),
-              },
-            });
+            if (result.data[0].is_user_verified == 1) {
+              res.status(200).json({
+                error: false,
+                data: {
+                  userName: userId,
+                  accessToken: generateUserJWTToken(
+                    { ...result?.data[0] },
+                    3 * 60 * 60 * 1000
+                  ),
+                },
+              });
+            } else {
+              res.status(400).json({
+                error: true,
+                errroMessage: "User Not verified",
+              });
+            }
           } else {
             res.status(200).json({
               error: true,
@@ -180,6 +191,48 @@ router.post("/login", (req, res) => {
       }
     });
   }
+});
+
+router.post("/resendOTP", (req, res) => {
+  const { emailAddress } = req.body;
+  const generatedOTP = generateOTP();
+  const options = {
+    method: "POST",
+    url: `http://localhost:${process.env.MESSAGE_PORT}/messageservice/sendOTPMail`,
+    headers: {
+      Authourization: messageAccessToken,
+    },
+    data: {
+      recipient: emailAddress,
+      otp: generatedOTP,
+    },
+  };
+  axios
+    .request(options)
+    .then(function (response) {
+      if (!response.data.error) {
+        executeStoredProcedure(
+          "CALL STORE_OTP(?,?)",
+          [emailAddress, generatedOTP],
+          (result) => {
+            if (!result.err) {
+              res.status(200).json({
+                message: "OTP Message sent successfully",
+                data: response.data,
+              });
+            }
+          }
+        );
+      } else {
+        res.status(200).json({
+          message: "Cannot Send Message Try again later",
+          data: response.data,
+        });
+      }
+    })
+    .catch(function (error) {
+      res.status(400).json(error);
+    });
 });
 
 module.exports = router;
